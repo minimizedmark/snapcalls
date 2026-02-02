@@ -1,0 +1,325 @@
+'use client';
+
+import { useState } from 'react';
+import { useRouter } from 'next/navigation';
+import { Phone, Building2, MessageSquare, CheckCircle, DollarSign } from 'lucide-react';
+import { loadStripe } from '@stripe/stripe-js';
+import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
+
+const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
+
+function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
+  const stripe = useStripe();
+  const elements = useElements();
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (!stripe || !elements) return;
+
+    setLoading(true);
+    setError('');
+
+    const { error: submitError } = await stripe.confirmPayment({
+      elements,
+      confirmParams: {
+        return_url: `${window.location.origin}/dashboard`,
+      },
+      redirect: 'if_required',
+    });
+
+    if (submitError) {
+      setError(submitError.message || 'Payment failed');
+      setLoading(false);
+    } else {
+      // Payment succeeded
+      onSuccess();
+    }
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="space-y-6">
+      <PaymentElement />
+      
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+          <p className="text-sm text-red-900">{error}</p>
+        </div>
+      )}
+
+      <button
+        type="submit"
+        disabled={!stripe || loading}
+        className="w-full px-6 py-3 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+      >
+        {loading ? 'Processing...' : 'Purchase Number - $5'}
+      </button>
+    </form>
+  );
+}
+
+export default function OnboardingPage() {
+  const router = useRouter();
+  const [step, setStep] = useState(1);
+  const [loading, setLoading] = useState(false);
+  const [clientSecret, setClientSecret] = useState('');
+
+  // Form data
+  const [businessName, setBusinessName] = useState('');
+  const [hoursStart, setHoursStart] = useState('09:00');
+  const [hoursEnd, setHoursEnd] = useState('17:00');
+  const [areaCode, setAreaCode] = useState('');
+
+  const handleBusinessInfoNext = async () => {
+    setLoading(true);
+    
+    // Save business info
+    const res = await fetch('/api/onboarding/business', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        businessName,
+        hoursStart,
+        hoursEnd,
+      }),
+    });
+
+    if (res.ok) {
+      setStep(2);
+    }
+    
+    setLoading(false);
+  };
+
+  const handleNumberPurchaseStart = async () => {
+    setLoading(true);
+
+    // Create payment intent for $5 number purchase
+    const res = await fetch('/api/number/purchase', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ areaCode: areaCode || undefined }),
+    });
+
+    const data = await res.json();
+    setClientSecret(data.clientSecret);
+    setLoading(false);
+  };
+
+  const handlePaymentSuccess = () => {
+    // Payment succeeded, number will be provisioned via webhook
+    setStep(3);
+  };
+
+  const handleComplete = () => {
+    router.push('/dashboard');
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Header */}
+      <header className="bg-white border-b">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
+          <div className="flex items-center space-x-2">
+            <div className="w-10 h-10 bg-black rounded-lg flex items-center justify-center">
+              <Phone className="w-6 h-6 text-cyan-500" />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold">Snap Calls</h1>
+              <p className="text-sm text-cyan-500 font-medium">Setup in a snap</p>
+            </div>
+          </div>
+        </div>
+      </header>
+
+      {/* Content */}
+      <div className="flex-1 py-12">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+          {/* Progress */}
+          <div className="mb-8">
+            <div className="flex items-center justify-between">
+              {[1, 2, 3].map((i) => (
+                <div
+                  key={i}
+                  className={`flex items-center ${i < 3 ? 'flex-1' : ''}`}
+                >
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
+                      step >= i
+                        ? 'bg-cyan-500 text-white'
+                        : 'bg-gray-200 text-gray-600'
+                    }`}
+                  >
+                    {i}
+                  </div>
+                  {i < 3 && (
+                    <div
+                      className={`h-1 flex-1 mx-4 ${
+                        step > i ? 'bg-cyan-500' : 'bg-gray-200'
+                      }`}
+                    />
+                  )}
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-between mt-2 text-sm">
+              <span className={step >= 1 ? 'text-cyan-600 font-medium' : 'text-gray-600'}>
+                Business Info
+              </span>
+              <span className={step >= 2 ? 'text-cyan-600 font-medium' : 'text-gray-600'}>
+                Get Your Number
+              </span>
+              <span className={step >= 3 ? 'text-cyan-600 font-medium' : 'text-gray-600'}>
+                Complete
+              </span>
+            </div>
+          </div>
+
+          {/* Step Content */}
+          <div className="bg-white rounded-lg border border-gray-200 p-8">
+            {step === 1 && (
+              <div className="space-y-6">
+                <div className="flex items-center space-x-3 mb-6">
+                  <Building2 className="w-6 h-6 text-cyan-500" />
+                  <h2 className="text-2xl font-bold">Tell us about your business</h2>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Business Name
+                  </label>
+                  <input
+                    type="text"
+                    value={businessName}
+                    onChange={(e) => setBusinessName(e.target.value)}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    placeholder="Acme HVAC"
+                  />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Opens At
+                    </label>
+                    <input
+                      type="time"
+                      value={hoursStart}
+                      onChange={(e) => setHoursStart(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Closes At
+                    </label>
+                    <input
+                      type="time"
+                      value={hoursEnd}
+                      onChange={(e) => setHoursEnd(e.target.value)}
+                      className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    />
+                  </div>
+                </div>
+
+                <button
+                  onClick={handleBusinessInfoNext}
+                  disabled={!businessName || loading}
+                  className="w-full px-6 py-3 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                >
+                  {loading ? 'Saving...' : 'Continue'}
+                </button>
+              </div>
+            )}
+
+            {step === 2 && (
+              <div className="space-y-6">
+                <div className="flex items-center space-x-3 mb-6">
+                  <DollarSign className="w-6 h-6 text-cyan-500" />
+                  <h2 className="text-2xl font-bold">Get Your Business Number</h2>
+                </div>
+
+                <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-6 mb-6">
+                  <h3 className="font-bold text-cyan-900 mb-2">One-time setup fee: $5</h3>
+                  <p className="text-sm text-cyan-800">
+                    We'll instantly assign you a dedicated business phone number. When customers call and you miss it, we text them back automatically.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Preferred Area Code (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={areaCode}
+                    onChange={(e) => setAreaCode(e.target.value.replace(/\D/g, '').slice(0, 3))}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    placeholder="403, 587, etc. (leave blank for any)"
+                    maxLength={3}
+                  />
+                  <p className="text-sm text-gray-500 mt-1">
+                    We'll try to get you a number with this area code, or assign the next available number.
+                  </p>
+                </div>
+
+                {!clientSecret ? (
+                  <div className="flex space-x-4">
+                    <button
+                      onClick={() => setStep(1)}
+                      className="flex-1 px-6 py-3 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 font-medium"
+                    >
+                      Back
+                    </button>
+                    <button
+                      onClick={handleNumberPurchaseStart}
+                      disabled={loading}
+                      className="flex-1 px-6 py-3 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                    >
+                      {loading ? 'Loading...' : 'Continue to Payment'}
+                    </button>
+                  </div>
+                ) : (
+                  <Elements stripe={stripePromise} options={{ clientSecret }}>
+                    <PaymentForm onSuccess={handlePaymentSuccess} />
+                  </Elements>
+                )}
+              </div>
+            )}
+
+            {step === 3 && (
+              <div className="space-y-6">
+                <div className="flex items-center space-x-3 mb-6">
+                  <MessageSquare className="w-6 h-6 text-cyan-500" />
+                  <h2 className="text-2xl font-bold">You're all set!</h2>
+                </div>
+
+                <div className="bg-green-50 border border-green-200 rounded-lg p-6 text-center">
+                  <CheckCircle className="w-16 h-16 text-green-600 mx-auto mb-4" />
+                  <h3 className="text-xl font-bold text-green-900 mb-2">
+                    Welcome to Snap Calls!
+                  </h3>
+                  <p className="text-green-800 mb-4">
+                    Your phone number has been set up and is ready to start responding to missed calls.
+                  </p>
+                  <p className="text-sm text-green-700">
+                    Next: Add funds to your wallet and customize your message templates in the dashboard.
+                  </p>
+                </div>
+
+                <button
+                  onClick={handleComplete}
+                  className="w-full px-6 py-3 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 font-medium"
+                >
+                  Go to Dashboard
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}

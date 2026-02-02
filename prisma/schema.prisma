@@ -1,0 +1,302 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(cuid())
+  email     String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+  timezone  String   @default("America/New_York")
+  isActive  Boolean  @default(true) @map("is_active")
+  
+  // Subscription tracking
+  setupFeePaid         Boolean          @default(false) @map("setup_fee_paid")
+  subscriptionType     SubscriptionType @default(BASIC) @map("subscription_type")
+  subscriptionStatus   String?          @map("subscription_status") // "active" | "paused" | "cancelled"
+  stripeSubscriptionId String?          @unique @map("stripe_subscription_id")
+  directCallsThisMonth Int              @default(0) @map("direct_calls_this_month")
+  upgradeWarningsSent  Int              @default(0) @map("upgrade_warnings_sent")
+
+  magicLinks              MagicLink[]
+  twilioConfig            TwilioConfig?
+  businessSettings        BusinessSettings?
+  messageTemplates        MessageTemplates?
+  messageChangeTracking   MessageChangeTracking?
+  messageChangeLogs       MessageChangeLog[]
+  vipContacts             VipContact[]
+  userFeatures            UserFeatures?
+  notificationSettings    NotificationSettings?
+  wallet                  Wallet?
+  walletTransactions      WalletTransaction[]
+  lowBalanceAlerts        LowBalanceAlert[]
+  stripeCustomer          StripeCustomer?
+  callLogs                CallLog[]
+
+  @@map("users")
+}
+
+enum SubscriptionType {
+  BASIC
+  PUBLIC_LINE
+}
+
+
+model MagicLink {
+  id        String   @id @default(cuid())
+  token     String   @unique @default(uuid())
+  userId    String   @map("user_id")
+  expiresAt DateTime @map("expires_at")
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("magic_links")
+}
+
+model TwilioConfig {
+  id           String  @id @default(cuid())
+  userId       String  @unique @map("user_id")
+  accountSid   String  @map("account_sid") // ENCRYPTED
+  authToken    String  @map("auth_token") // ENCRYPTED
+  phoneNumber  String  @map("phone_number")
+  verified     Boolean @default(false)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("twilio_config")
+}
+
+model BusinessSettings {
+  id           String   @id @default(cuid())
+  userId       String   @unique @map("user_id")
+  businessName String   @map("business_name")
+  hoursStart   String   @map("hours_start") // TIME format "09:00"
+  hoursEnd     String   @map("hours_end") // TIME format "17:00"
+  daysOpen     Int[]    @map("days_open") // Array of days [1,2,3,4,5] (Monday=1)
+  timezone     String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("business_settings")
+}
+
+model MessageTemplates {
+  id                   String @id @default(cuid())
+  userId               String @unique @map("user_id")
+  standardResponse     String @map("standard_response")
+  voicemailResponse    String @map("voicemail_response")
+  afterHoursResponse   String @map("after_hours_response")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("message_templates")
+}
+
+model MessageChangeTracking {
+  id           String @id @default(cuid())
+  userId       String @unique @map("user_id")
+  currentMonth String @map("current_month") // Format "2026-01"
+  changesUsed  Int    @default(0) @map("changes_used")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("message_change_tracking")
+}
+
+model MessageChangeLog {
+  id            String   @id @default(cuid())
+  userId        String   @map("user_id")
+  timestamp     DateTime @default(now())
+  messageType   String   @map("message_type") // "standard" | "voicemail" | "after_hours"
+  changeMethod  String   @map("change_method") // "manual" | "ai"
+  charged       Boolean
+  amount        Decimal  @db.Decimal(10, 2)
+  balanceAfter  Decimal  @map("balance_after") @db.Decimal(10, 2)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, timestamp(sort: Desc)])
+  @@map("message_change_log")
+}
+
+model VipContact {
+  id            String    @id @default(cuid())
+  userId        String    @map("user_id")
+  phoneNumber   String    @map("phone_number")
+  name          String
+  notes         String?
+  addedDate     DateTime  @default(now()) @map("added_date")
+  lastCallDate  DateTime? @map("last_call_date")
+  totalCalls    Int       @default(0) @map("total_calls")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, phoneNumber])
+  @@index([userId, phoneNumber])
+  @@map("vip_contacts")
+}
+
+model UserFeatures {
+  id                    String  @id @default(cuid())
+  userId                String  @unique @map("user_id")
+  sequencesEnabled      Boolean @default(false) @map("sequences_enabled")
+  recognitionEnabled    Boolean @default(false) @map("recognition_enabled")
+  twoWayEnabled         Boolean @default(false) @map("two_way_enabled")
+  vipPriorityEnabled    Boolean @default(false) @map("vip_priority_enabled")
+  transcriptionEnabled  Boolean @default(false) @map("transcription_enabled")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("user_features")
+}
+
+model NotificationSettings {
+  id             String   @id @default(cuid())
+  userId         String   @unique @map("user_id")
+  notifySms      Boolean  @default(true) @map("notify_sms")
+  notifyEmail    Boolean  @default(true) @map("notify_email")
+  smsNumber      String?  @map("sms_number")
+  emailAddress   String?  @map("email_address")
+  notifyOnReply  Boolean  @default(true) @map("notify_on_reply")
+  notifyOnVip    Boolean  @default(true) @map("notify_on_vip")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("notification_settings")
+}
+
+model Wallet {
+  id                   String  @id @default(cuid())
+  userId               String  @unique @map("user_id")
+  balance              Decimal @default(0.00) @db.Decimal(10, 2)
+  currency             String  @default("USD")
+  autoReloadEnabled    Boolean @default(false) @map("auto_reload_enabled")
+  autoReloadThreshold  Decimal @default(10.00) @map("auto_reload_threshold") @db.Decimal(10, 2)
+  autoReloadAmount     Decimal @default(20.00) @map("auto_reload_amount") @db.Decimal(10, 2)
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("wallet")
+}
+
+enum TransactionType {
+  CREDIT
+  DEBIT
+}
+
+model WalletTransaction {
+  id           String          @id @default(cuid())
+  userId       String          @map("user_id")
+  amount       Decimal         @db.Decimal(10, 2)
+  type         TransactionType
+  description  String
+  referenceId  String?         @map("reference_id")
+  balanceAfter Decimal         @map("balance_after") @db.Decimal(10, 2)
+  timestamp    DateTime        @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, timestamp(sort: Desc)])
+  @@map("wallet_transactions")
+}
+
+model LowBalanceAlert {
+  id         String   @id @default(cuid())
+  userId     String   @map("user_id")
+  alertLevel Decimal  @map("alert_level") @db.Decimal(10, 2)
+  lastSentAt DateTime @map("last_sent_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, alertLevel])
+  @@map("low_balance_alerts")
+}
+
+model StripeCustomer {
+  id                String  @id @default(cuid())
+  userId            String  @unique @map("user_id")
+  stripeCustomerId  String  @unique @map("stripe_customer_id")
+  paymentMethodId   String? @map("payment_method_id")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("stripe_customers")
+}
+
+model CallLog {
+  id                     String              @id @default(cuid())
+  userId                 String              @map("user_id")
+  callerNumber           String              @map("caller_number")
+  callerName             String?             @map("caller_name")
+  timestamp              DateTime            @default(now())
+  twilioCallSid          String              @unique @map("twilio_call_sid")
+  isVip                  Boolean             @default(false) @map("is_vip")
+  isBusinessHours        Boolean             @map("is_business_hours")
+  hasVoicemail           Boolean             @default(false) @map("has_voicemail")
+  voicemailUrl           String?             @map("voicemail_url")
+  voicemailTranscription String?             @map("voicemail_transcription")
+  responseType           String              @map("response_type") // "standard" | "voicemail" | "after_hours"
+  messageSent            String              @map("message_sent")
+  smsStatus              String?             @map("sms_status")
+  smsMessageSid          String?             @map("sms_message_sid")
+  sequenceTriggered      Boolean             @default(false) @map("sequence_triggered")
+  recognitionUsed        Boolean             @default(false) @map("recognition_used")
+  twoWayTriggered        Boolean             @default(false) @map("two_way_triggered")
+  customerReplied        Boolean             @default(false) @map("customer_replied")
+  customerReplyText      String?             @map("customer_reply_text")
+  baseCost               Decimal             @default(1.00) @map("base_cost") @db.Decimal(10, 2)
+  sequencesCost          Decimal             @default(0.00) @map("sequences_cost") @db.Decimal(10, 2)
+  recognitionCost        Decimal             @default(0.00) @map("recognition_cost") @db.Decimal(10, 2)
+  twoWayCost             Decimal             @default(0.00) @map("two_way_cost") @db.Decimal(10, 2)
+  vipPriorityCost        Decimal             @default(0.00) @map("vip_priority_cost") @db.Decimal(10, 2)
+  transcriptionCost      Decimal             @default(0.00) @map("transcription_cost") @db.Decimal(10, 2)
+  totalCost              Decimal             @map("total_cost") @db.Decimal(10, 2)
+  ownerNotified          Boolean             @default(false) @map("owner_notified")
+  markedAsHandled        Boolean             @default(false) @map("marked_as_handled")
+  handledAt              DateTime?           @map("handled_at")
+  notes                  String?
+
+  user      User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  sequences ResponseSequence[]
+
+  @@index([userId, timestamp(sort: Desc)])
+  @@index([callerNumber])
+  @@index([twilioCallSid])
+  @@map("call_logs")
+}
+
+model ResponseSequence {
+  id             String    @id @default(cuid())
+  callLogId      String    @map("call_log_id")
+  sequenceNumber Int       @map("sequence_number") // 1, 2, or 3
+  scheduledAt    DateTime  @map("scheduled_at")
+  sentAt         DateTime? @map("sent_at")
+  messageSent    String    @map("message_sent")
+  status         String // "scheduled" | "sent" | "failed"
+
+  callLog CallLog @relation(fields: [callLogId], references: [id], onDelete: Cascade)
+
+  @@index([callLogId, sequenceNumber])
+  @@index([scheduledAt, status])
+  @@map("response_sequences")
+}
+
+model TemplateLibrary {
+  id           String @id @default(cuid())
+  category     String // "HVAC" | "Plumbing" | "Medical" | "Legal" | "Restaurant" | "General"
+  name         String
+  templateType String @map("template_type") // "standard" | "voicemail" | "after_hours"
+  messageText  String @map("message_text")
+
+  @@index([category, templateType])
+  @@map("template_library")
+}
