@@ -163,13 +163,14 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        const currentBalance = fromDecimal(wallet.balance);
-        const newBalance = currentBalance + amount;
+        const currentBalanceCents = fromDecimal(wallet.balance); // Already in cents
+        const amountCents = amount * 100; // Convert dollars to cents
+        const newBalanceCents = currentBalanceCents + amountCents;
         
         await prisma.wallet.update({
           where: { userId },
           data: {
-            balance: toDecimal(newBalance * 100), // Convert to cents
+            balance: toDecimal(newBalanceCents),
           },
         });
         
@@ -177,10 +178,10 @@ export async function POST(req: NextRequest) {
         await prisma.walletTransaction.create({
           data: {
             userId,
-            amount: toDecimal(amount * 100),
+            amount: toDecimal(amountCents),
             type: 'CREDIT',
             description: 'Admin credit',
-            balanceAfter: toDecimal(newBalance * 100),
+            balanceAfter: toDecimal(newBalanceCents),
           },
         });
         break;
