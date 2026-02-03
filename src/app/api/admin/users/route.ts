@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/prisma';
-import { fromDecimal } from '@/lib/pricing';
+import { fromDecimal, toDecimal } from '@/lib/pricing';
 
 /**
  * Get users with filtering and pagination
@@ -162,11 +162,14 @@ export async function POST(req: NextRequest) {
             { status: 404 }
           );
         }
+
+        const currentBalance = fromDecimal(wallet.balance);
+        const newBalance = currentBalance + amount;
         
         await prisma.wallet.update({
           where: { userId },
           data: {
-            balance: { increment: amount * 100 }, // Convert to cents
+            balance: toDecimal(newBalance * 100), // Convert to cents
           },
         });
         
@@ -174,10 +177,10 @@ export async function POST(req: NextRequest) {
         await prisma.walletTransaction.create({
           data: {
             userId,
-            amount: amount * 100,
+            amount: toDecimal(amount * 100),
             type: 'CREDIT',
             description: 'Admin credit',
-            balanceAfter: wallet.balance + (amount * 100),
+            balanceAfter: toDecimal(newBalance * 100),
           },
         });
         break;
