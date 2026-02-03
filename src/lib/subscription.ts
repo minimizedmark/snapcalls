@@ -103,7 +103,7 @@ async function autoUpgradeToPublicLine(userId: string): Promise<UpgradeResult> {
 
   try {
     // Charge first month to card
-    const paymentIntent = await stripe.paymentIntents.create({
+    const paymentIntent = await stripe().paymentIntents.create({
       amount: PRICING.PUBLIC_LINE_MONTHLY * 100, // Convert to cents
       currency: 'usd',
       customer: user.stripeCustomer.stripeCustomerId,
@@ -161,7 +161,7 @@ async function createPublicLineSubscription(userId: string): Promise<void> {
   }
 
   // Create subscription (you'll need to create this price in Stripe dashboard)
-  const subscription = await stripe.subscriptions.create({
+  const subscription = await stripe().subscriptions.create({
     customer: user.stripeCustomer.stripeCustomerId,
     items: [
       {
@@ -296,7 +296,7 @@ export async function cancelPublicLineSubscription(userId: string): Promise<Upgr
   }
 
   try {
-    await stripe.subscriptions.cancel(user.stripeSubscriptionId);
+    await stripe().subscriptions.cancel(user.stripeSubscriptionId);
 
     await prisma.user.update({
       where: { id: userId },
