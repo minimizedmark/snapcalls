@@ -175,7 +175,7 @@ export async function POST(req: NextRequest) {
           data: {
             userId,
             amount: amount * 100,
-            type: 'credit',
+            type: 'CREDIT',
             description: 'Admin credit',
             balanceAfter: wallet.balance + (amount * 100),
           },
