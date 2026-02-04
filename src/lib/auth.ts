@@ -7,6 +7,12 @@ import { v4 as uuidv4 } from 'uuid';
  */
 export async function createMagicLink(email: string): Promise<string | null> {
   try {
+    // Validate environment variables
+    if (!process.env.APP_URL) {
+      console.error('❌ APP_URL environment variable is not set');
+      return null;
+    }
+
     // Find or create user
     let user = await prisma.user.findUnique({
       where: { email },
@@ -20,6 +26,7 @@ export async function createMagicLink(email: string): Promise<string | null> {
           isActive: true,
         },
       });
+      console.log('✅ Created new user:', email);
     }
 
     // Create magic link token (expires in 15 minutes)
@@ -37,12 +44,20 @@ export async function createMagicLink(email: string): Promise<string | null> {
 
     // Send email with magic link
     const magicLink = `${process.env.APP_URL}/api/auth/verify?token=${token}`;
+    
+    // In development, log the magic link
+    if (process.env.NODE_ENV === 'development') {
+      console.log('🔗 Magic link (dev mode):', magicLink);
+    }
+    
     const result = await sendMagicLinkEmail(email, magicLink);
 
     if (!result) {
+      console.error('❌ Failed to send magic link email to:', email);
       return null;
     }
 
+    console.log('✅ Magic link sent to:', email);
     return token;
   } catch (error) {
     console.error('Error creating magic link:', error);

@@ -4,7 +4,7 @@ const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
 const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@snapback.app';
 
 if (!RESEND_API_KEY) {
-  console.warn('⚠️  Resend API key not configured');
+  console.warn('⚠️  Resend API key not configured - emails will not be sent');
 }
 
 let resendInstance: Resend | null = null;
@@ -26,9 +26,11 @@ export async function sendMagicLinkEmail(
   try {
     const resend = getResendClient();
     if (!resend) {
-      console.error('Resend client not configured');
+      console.error('❌ Resend client not configured - check RESEND_API_KEY');
       return null;
     }
+
+    console.log('📧 Attempting to send magic link email to:', to);
 
     const { data, error } = await resend.emails.send({
       from: `Snap Calls <${FROM_EMAIL}>`,
@@ -79,13 +81,14 @@ export async function sendMagicLinkEmail(
     });
 
     if (error) {
-      console.error('Failed to send magic link email:', error);
+      console.error('❌ Failed to send magic link email:', error);
       return null;
     }
 
+    console.log('✅ Magic link email sent successfully. ID:', data?.id);
     return data;
   } catch (error) {
-    console.error('Error sending magic link email:', error);
+    console.error('❌ Error sending magic link email:', error);
     return null;
   }
 }
