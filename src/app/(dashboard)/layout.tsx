@@ -1,7 +1,7 @@
 'use client';
 
 import { useSession, signOut } from 'next-auth/react';
-import { usePathname } from 'next/navigation';
+import { usePathname, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
   Phone,
@@ -14,7 +14,7 @@ import {
   Menu,
   X,
 } from 'lucide-react';
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
@@ -30,9 +30,44 @@ export default function DashboardLayout({
 }: {
   children: React.ReactNode;
 }) {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
   const pathname = usePathname();
+  const router = useRouter();
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [checkingOnboarding, setCheckingOnboarding] = useState(true);
+
+  // Check if user has completed onboarding
+  useEffect(() => {
+    if (status === 'authenticated' && session?.user) {
+      fetch('/api/user/session')
+        .then((res) => res.json())
+        .then((data) => {
+          if (data.hasCompletedOnboarding === false) {
+            router.push('/onboarding');
+          }
+          setCheckingOnboarding(false);
+        })
+        .catch(() => {
+          setCheckingOnboarding(false);
+        });
+    } else if (status === 'unauthenticated') {
+      router.push('/login');
+    }
+  }, [status, session, router]);
+
+  // Show loading while checking onboarding
+  if (status === 'loading' || checkingOnboarding) {
+    return (
+      <div className="min-h-screen flex items-center justify-center">
+        <div className="text-center">
+          <div className="w-16 h-16 bg-black rounded-lg flex items-center justify-center mx-auto mb-4">
+            <Phone className="w-10 h-10 text-cyan-500 animate-pulse" />
+          </div>
+          <p className="text-gray-600">Loading...</p>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="min-h-screen bg-gray-50">

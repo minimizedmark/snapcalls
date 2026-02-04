@@ -1,8 +1,10 @@
 'use client';
 
-import { useState, FormEvent } from 'react';
+import { useState, FormEvent, useEffect } from 'react';
 import { Phone, Mail, Loader2 } from 'lucide-react';
 import Link from 'next/link';
+import { useSearchParams, useRouter } from 'next/navigation';
+import { signIn } from 'next-auth/react';
 import { createMagicLink } from '@/lib/auth';
 
 export default function LoginPage() {
@@ -10,6 +12,56 @@ export default function LoginPage() {
   const [loading, setLoading] = useState(false);
   const [sent, setSent] = useState(false);
   const [error, setError] = useState('');
+  const searchParams = useSearchParams();
+  const router = useRouter();
+
+  // Handle magic link token from URL
+  useEffect(() => {
+    const token = searchParams.get('token');
+    const urlError = searchParams.get('error');
+
+    if (urlError) {
+      if (urlError === 'invalid_token') {
+        setError('Invalid magic link');
+      } else if (urlError === 'invalid_or_expired') {
+        setError('Magic link expired or already used');
+      }
+    }
+
+    if (token && !loading) {
+      setLoading(true);
+      signIn('magic-link', {
+        token,
+        redirect: false,
+      }).then(async (result) => {
+        if (result?.ok) {
+          // Check if user needs onboarding
+          const sessionRes = await fetch('/api/auth/session');
+          const sessionData = await sessionRes.json();
+          
+          if (sessionData?.user) {
+            // Check if user has completed onboarding
+            const userRes = await fetch('/api/user/session');
+            if (userRes.ok) {
+              const userData = await userRes.json();
+              if (userData.hasCompletedOnboarding === false) {
+                router.push('/onboarding');
+                return;
+              }
+            }
+          }
+          
+          router.push('/dashboard');
+        } else {
+          setError('Failed to sign in. Please try again.');
+          setLoading(false);
+        }
+      }).catch(() => {
+        setError('Failed to sign in. Please try again.');
+        setLoading(false);
+      });
+    }
+  }, [searchParams, router, loading]);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
@@ -55,7 +107,7 @@ export default function LoginPage() {
           <div className="text-center">
             <h2 className="text-3xl font-bold text-black">Welcome back</h2>
             <p className="mt-2 text-gray-600">
-              Sign in to your Snap Calls account
+              Sign in or create a new account with your email
             </p>
           </div>
 
@@ -100,12 +152,17 @@ export default function LoginPage() {
                     Sending magic link...
                   </>
                 ) : (
-                  'Send magic link'
+                  'Continue with Email'
                 )}
               </button>
 
-              <div className="text-center text-sm text-gray-600">
-                Don&apos;t have an account? We&apos;ll create one for you!
+              <div className="text-center">
+                <p className="text-sm text-gray-600">
+                  <strong>New user?</strong> We&apos;ll create your account automatically!
+                </p>
+                <p className="text-xs text-gray-500 mt-2">
+                  No passwords needed - just click the link we email you
+                </p>
               </div>
             </form>
           ) : (
