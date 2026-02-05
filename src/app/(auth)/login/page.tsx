@@ -5,7 +5,6 @@ import { Phone, Mail, Loader2 } from 'lucide-react';
 import Link from 'next/link';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { signIn } from 'next-auth/react';
-import { createMagicLink } from '@/lib/auth';
 
 function LoginForm() {
   const [email, setEmail] = useState('');
@@ -69,10 +68,16 @@ function LoginForm() {
     setError('');
 
     try {
-      const token = await createMagicLink(email);
+      const response = await fetch('/api/auth/send-magic-link', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email }),
+      });
 
-      if (!token) {
-        throw new Error('Failed to send magic link');
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Failed to send magic link');
       }
 
       setSent(true);
