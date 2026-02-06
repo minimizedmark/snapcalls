@@ -4,6 +4,7 @@ import { creditWallet } from '@/lib/wallet';
 import { calculateWalletDeposit } from '@/lib/pricing';
 import { prisma } from '@/lib/prisma';
 import { purchaseTwilioNumber } from '@/lib/twilio-provisioning';
+import { addNumberToInventory, assignAvailableNumber } from '@/lib/number-inventory';
 import Stripe from 'stripe';
 
 /**
@@ -85,25 +86,38 @@ async function handlePaymentIntentSucceeded(paymentIntent: Stripe.PaymentIntent)
     return;
   }
 
-  // Check if this is a number purchase vs wallet deposit
-  const paymentType = paymentIntent.metadata.type;
-
-  if (paymentType === 'number_purchase') {
-    await handleNumberPurchase(stripeCustomer.userId, stripeCustomer.user.email, paymentIntent);
-  } else {
-    await handleWalletDeposit(stripeCustomer.userId, stripeCustomer.user.email, amount, paymentIntent.id);
-  }
+  // All payments are now wallet deposits (number purchase happens from wallet balance)
+  await handleWalletDeposit(stripeCustomer.userId, stripeCustomer.user.email, amount, paymentIntent.id);
 }
 
-/**
- * Handles number purchase payment
- */
+// NOTE: Number purchase is now handled directly from wallet balance in /api/number/purchase
+// This function is kept for reference but is no longer called
+/*
 async function handleNumberPurchase(userId: string, userEmail: string, paymentIntent: Stripe.PaymentIntent) {
   const areaCode = paymentIntent.metadata.areaCode !== 'any' ? paymentIntent.metadata.areaCode : undefined;
 
   try {
+    const existingConfig = await prisma.twilioConfig.findUnique({
+      where: { userId },
+    });
+
+    if (existingConfig) {
+      console.warn('⚠️ User already has a number, skipping purchase:', {
+        userId,
+        phoneNumber: existingConfig.phoneNumber,
+      });
+      return;
+    }
+
+    // Try to assign from inventory first
+    const pooledNumber = await assignAvailableNumber(userId, areaCode);
+
+    const phoneNumber = pooledNumber || (await purchaseTwilioNumber(areaCode));
+
     // Purchase Twilio number
-    const phoneNumber = await purchaseTwilioNumber(areaCode);
+    if (!pooledNumber) {
+      await addNumberToInventory(phoneNumber, userId);
+    }
 
     // Save to database (no encryption needed - it's under our account)
     await prisma.twilioConfig.create({
@@ -116,10 +130,11 @@ async function handleNumberPurchase(userId: string, userEmail: string, paymentIn
       },
     });
 
-    console.log('✅ Number purchased and assigned:', {
+    console.log('✅ Number assigned:', {
       userId,
       phoneNumber,
       setupFee: 5.00,
+      source: pooledNumber ? 'inventory' : 'twilio',
     });
 
     // Send confirmation email
@@ -153,6 +168,7 @@ async function handleNumberPurchase(userId: string, userEmail: string, paymentIn
     // TODO: Refund the $5 if number purchase fails
   }
 }
+*/
 
 /**
  * Handles wallet deposit payment

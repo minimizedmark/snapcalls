@@ -32,7 +32,7 @@ export async function createStripeCustomer(email: string): Promise<string> {
   const customer = await stripe.customers.create({
     email,
     metadata: {
-      source: 'snapback',
+      source: 'snapcalls',
     },
   });
 

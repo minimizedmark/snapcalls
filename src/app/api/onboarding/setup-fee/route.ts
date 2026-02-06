@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth-options';
 import { processSetupFee } from '@/lib/pricing';
 import { prisma } from '@/lib/prisma';
 import { purchaseTwilioNumber } from '@/lib/twilio-provisioning';
+import { addNumberToInventory, assignAvailableNumber } from '@/lib/number-inventory';
 
 /**
  * Processes setup fee and provisions Twilio number
@@ -31,8 +32,13 @@ export async function POST() {
     // Deduct $5 setup fee from wallet
     const newBalance = await processSetupFee(session.user.id);
 
-    // Purchase Twilio number
-    const phoneNumber = await purchaseTwilioNumber();
+    // Assign from inventory or purchase Twilio number
+    const pooledNumber = await assignAvailableNumber(session.user.id);
+    const phoneNumber = pooledNumber || (await purchaseTwilioNumber());
+
+    if (!pooledNumber) {
+      await addNumberToInventory(phoneNumber, session.user.id);
+    }
 
     // Save number to database
     await prisma.twilioConfig.create({

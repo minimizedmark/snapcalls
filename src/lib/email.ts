@@ -1,7 +1,7 @@
 import { Resend } from 'resend';
 
 const RESEND_API_KEY = process.env.RESEND_API_KEY || '';
-const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@snapback.app';
+const FROM_EMAIL = process.env.FROM_EMAIL || 'noreply@send.snappcalls.app';
 
 let resendInstance: Resend | null = null;
 

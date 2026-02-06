@@ -17,8 +17,8 @@ export const PRICING = {
   },
   WALLET_DEPOSITS: {
     20: { bonus: 0, description: 'Minimum deposit' },
-    30: { bonus: 5, description: '15% bonus' },
-    50: { bonus: 10, description: '20% bonus' },
+    30: { bonus: 4.5, description: '15% bonus' },
+    50: { bonus: 12.5, description: '25% bonus' },
     100: { bonus: 50, description: '50% bonus' },
   },
   SETUP_FEE: 5.0,

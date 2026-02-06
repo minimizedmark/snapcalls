@@ -8,6 +8,7 @@ generator client {
 datasource db {
   provider = "postgresql"
   url      = env("DATABASE_URL")
+  schemas  = ["public"]
 }
 
 model User {
@@ -41,11 +42,19 @@ model User {
   callLogs                CallLog[]
 
   @@map("users")
+  @@schema("public")
 }
 
 enum SubscriptionType {
   BASIC
   PUBLIC_LINE
+  @@schema("public")
+}
+
+enum PhoneNumberStatus {
+  AVAILABLE
+  ASSIGNED
+  @@schema("public")
 }
 
 
@@ -60,6 +69,7 @@ model MagicLink {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("magic_links")
+  @@schema("public")
 }
 
 model TwilioConfig {
@@ -73,6 +83,25 @@ model TwilioConfig {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("twilio_config")
+  @@schema("public")
+}
+
+model PhoneNumberInventory {
+  id             String            @id @default(cuid())
+  phoneNumber    String            @unique @map("phone_number")
+  areaCode       String?           @map("area_code")
+  status         PhoneNumberStatus @default(AVAILABLE)
+  assignedUserId String?           @map("assigned_user_id")
+  assignedAt     DateTime?         @map("assigned_at")
+  releasedAt     DateTime?         @map("released_at")
+  createdAt      DateTime          @default(now()) @map("created_at")
+  updatedAt      DateTime          @updatedAt @map("updated_at")
+
+  assignedUser User? @relation(fields: [assignedUserId], references: [id], onDelete: SetNull)
+
+  @@index([status])
+  @@map("phone_number_inventory")
+  @@schema("public")
 }
 
 model BusinessSettings {
@@ -87,6 +116,7 @@ model BusinessSettings {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("business_settings")
+  @@schema("public")
 }
 
 model MessageTemplates {
@@ -99,6 +129,7 @@ model MessageTemplates {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("message_templates")
+  @@schema("public")
 }
 
 model MessageChangeTracking {
@@ -110,6 +141,7 @@ model MessageChangeTracking {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("message_change_tracking")
+  @@schema("public")
 }
 
 model MessageChangeLog {
@@ -126,6 +158,7 @@ model MessageChangeLog {
 
   @@index([userId, timestamp(sort: Desc)])
   @@map("message_change_log")
+  @@schema("public")
 }
 
 model VipContact {
@@ -143,6 +176,7 @@ model VipContact {
   @@unique([userId, phoneNumber])
   @@index([userId, phoneNumber])
   @@map("vip_contacts")
+  @@schema("public")
 }
 
 model UserFeatures {
@@ -157,6 +191,7 @@ model UserFeatures {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("user_features")
+  @@schema("public")
 }
 
 model NotificationSettings {
@@ -172,6 +207,7 @@ model NotificationSettings {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("notification_settings")
+  @@schema("public")
 }
 
 model Wallet {
@@ -186,11 +222,13 @@ model Wallet {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("wallet")
+  @@schema("public")
 }
 
 enum TransactionType {
   CREDIT
   DEBIT
+  @@schema("public")
 }
 
 model WalletTransaction {
@@ -207,6 +245,7 @@ model WalletTransaction {
 
   @@index([userId, timestamp(sort: Desc)])
   @@map("wallet_transactions")
+  @@schema("public")
 }
 
 model LowBalanceAlert {
@@ -219,6 +258,7 @@ model LowBalanceAlert {
 
   @@index([userId, alertLevel])
   @@map("low_balance_alerts")
+  @@schema("public")
 }
 
 model StripeCustomer {
@@ -230,6 +270,7 @@ model StripeCustomer {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@map("stripe_customers")
+  @@schema("public")
 }
 
 model CallLog {
@@ -272,6 +313,7 @@ model CallLog {
   @@index([callerNumber])
   @@index([twilioCallSid])
   @@map("call_logs")
+  @@schema("public")
 }
 
 model ResponseSequence {
@@ -288,6 +330,7 @@ model ResponseSequence {
   @@index([callLogId, sequenceNumber])
   @@index([scheduledAt, status])
   @@map("response_sequences")
+  @@schema("public")
 }
 
 model TemplateLibrary {
@@ -299,4 +342,5 @@ model TemplateLibrary {
 
   @@index([category, templateType])
   @@map("template_library")
+  @@schema("public")
 }

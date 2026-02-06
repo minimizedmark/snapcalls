@@ -3,6 +3,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth-options';
 import { prisma } from '@/lib/prisma';
 import { createPaymentIntent, createStripeCustomer } from '@/lib/stripe';
+import { PRICING } from '@/lib/pricing';
 
 /**
  * Create a payment intent for wallet deposit
@@ -18,8 +19,12 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const { amount } = body;
 
-    if (!amount || amount < 1) {
-      return NextResponse.json({ error: 'Invalid amount' }, { status: 400 });
+    // Validate amount - must be at least $20 or one of the bonus tiers
+    const validAmounts = [20, 30, 50, 100];
+    if (!amount || !validAmounts.includes(amount)) {
+      return NextResponse.json({ 
+        error: `Invalid amount. Please select $20, $30, $50, or $100` 
+      }, { status: 400 });
     }
 
     // Get or create Stripe customer
@@ -44,6 +49,7 @@ export async function POST(req: NextRequest) {
       {
         userId: session.user.id,
         type: 'wallet_deposit',
+        amount: amount.toString(),
       }
     );
 
@@ -58,4 +64,5 @@ export async function POST(req: NextRequest) {
       { status: 500 }
     );
   }
+}
 }

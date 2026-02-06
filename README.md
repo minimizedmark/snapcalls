@@ -139,7 +139,7 @@ MIT
 
 ## 🤝 Support
 
-For support, email support@snapback.app or visit our documentation.
+For support, email support@snapcalls.app or visit our documentation.
 
 ---
 

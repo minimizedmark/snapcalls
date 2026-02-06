@@ -6,9 +6,14 @@ import { Phone, Building2, MessageSquare, CheckCircle, DollarSign } from 'lucide
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, PaymentElement, useStripe, useElements } from '@stripe/react-stripe-js';
 
-const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!);
+// Load Stripe with the publishable key from environment
+const stripeKey = process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY;
+if (!stripeKey) {
+  console.error('Missing NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY');
+}
+const stripePromise = stripeKey ? loadStripe(stripeKey) : null;
 
-function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
+function PaymentForm({ onSuccess, amount, totalCredit }: { onSuccess: () => void; amount: number; totalCredit: number }) {
   const stripe = useStripe();
   const elements = useElements();
   const [loading, setLoading] = useState(false);
@@ -25,7 +30,7 @@ function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
     const { error: submitError } = await stripe.confirmPayment({
       elements,
       confirmParams: {
-        return_url: `${window.location.origin}/dashboard`,
+        return_url: `${window.location.origin}/onboarding`,
       },
       redirect: 'if_required',
     });
@@ -54,7 +59,7 @@ function PaymentForm({ onSuccess }: { onSuccess: () => void }) {
         disabled={!stripe || loading}
         className="w-full px-6 py-3 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
       >
-        {loading ? 'Processing...' : 'Purchase Number - $5'}
+        {loading ? 'Processing...' : `Deposit $${amount} (Get $${totalCredit.toFixed(2)} credit)`}
       </button>
     </form>
   );
@@ -65,6 +70,9 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [clientSecret, setClientSecret] = useState('');
+  const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const [businessError, setBusinessError] = useState<string | null>(null);
+  const [depositAmount, setDepositAmount] = useState(20);
 
   // Form data
   const [businessName, setBusinessName] = useState('');
@@ -72,45 +80,110 @@ export default function OnboardingPage() {
   const [hoursEnd, setHoursEnd] = useState('17:00');
   const [areaCode, setAreaCode] = useState('');
 
+  // Calculate bonus based on deposit amount
+  const getBonusInfo = (amount: number) => {
+    const bonuses: Record<number, { bonus: number; percentage: number }> = {
+      20: { bonus: 0, percentage: 0 },
+      30: { bonus: 4.5, percentage: 15 },
+      50: { bonus: 12.5, percentage: 25 },
+      100: { bonus: 50, percentage: 50 },
+    };
+    return bonuses[amount] || { bonus: 0, percentage: 0 };
+  };
+
+  const bonusInfo = getBonusInfo(depositAmount);
+  const totalCredit = depositAmount + bonusInfo.bonus;
+
   const handleBusinessInfoNext = async () => {
     setLoading(true);
+    setBusinessError(null);
     
     // Save business info
-    const res = await fetch('/api/onboarding/business', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        businessName,
-        hoursStart,
-        hoursEnd,
-      }),
-    });
+    try {
+      const res = await fetch('/api/onboarding/business', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          businessName,
+          hoursStart,
+          hoursEnd,
+        }),
+      });
 
-    if (res.ok) {
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        setBusinessError(data?.error || 'Failed to save business info');
+        return;
+      }
+
       setStep(2);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Network error';
+      setBusinessError(message);
+    } finally {
+      setLoading(false);
     }
-    
-    setLoading(false);
   };
 
   const handleNumberPurchaseStart = async () => {
     setLoading(true);
+    setPurchaseError(null);
 
-    // Create payment intent for $5 number purchase
-    const res = await fetch('/api/number/purchase', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ areaCode: areaCode || undefined }),
-    });
+    // Create payment intent for wallet deposit
+    try {
+      const res = await fetch('/api/wallet/deposit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ amount: depositAmount }),
+      });
 
-    const data = await res.json();
-    setClientSecret(data.clientSecret);
-    setLoading(false);
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setPurchaseError(data?.error || 'Failed to start deposit');
+        return;
+      }
+
+      if (!data?.clientSecret) {
+        setPurchaseError('Missing payment client secret');
+        return;
+      }
+
+      setClientSecret(data.clientSecret);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Network error';
+      setPurchaseError(message);
+    } finally {
+      setLoading(false);
+    }
   };
 
-  const handlePaymentSuccess = () => {
-    // Payment succeeded, number will be provisioned via webhook
-    setStep(3);
+  const handlePaymentSuccess = async () => {
+    // Payment succeeded, now purchase number from wallet
+    setLoading(true);
+    try {
+      const res = await fetch('/api/number/purchase', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ areaCode: areaCode || undefined }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        setPurchaseError(data?.error || 'Failed to purchase number');
+        setLoading(false);
+        return;
+      }
+
+      // Success! Move to completion step
+      setStep(3);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : 'Network error';
+      setPurchaseError(message);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleComplete = () => {
@@ -231,6 +304,12 @@ export default function OnboardingPage() {
                 >
                   {loading ? 'Saving...' : 'Continue'}
                 </button>
+
+                {businessError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <p className="text-sm text-red-900">{businessError}</p>
+                  </div>
+                )}
               </div>
             )}
 
@@ -238,32 +317,88 @@ export default function OnboardingPage() {
               <div className="space-y-6">
                 <div className="flex items-center space-x-3 mb-6">
                   <DollarSign className="w-6 h-6 text-cyan-500" />
-                  <h2 className="text-2xl font-bold">Get Your Business Number</h2>
+                  <h2 className="text-2xl font-bold">Load Your Wallet</h2>
                 </div>
 
                 <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-6 mb-6">
-                  <h3 className="font-bold text-cyan-900 mb-2">One-time setup fee: $5</h3>
-                  <p className="text-sm text-cyan-800">
-                    We'll instantly assign you a dedicated business phone number. When customers call and you miss it, we text them back automatically.
+                  <h3 className="font-bold text-cyan-900 mb-2">First, add funds to your wallet</h3>
+                  <p className="text-sm text-cyan-800 mb-3">
+                    Your phone number costs $5 (one-time). We'll deduct it from your wallet after you deposit.
+                  </p>
+                  <p className="text-sm text-cyan-700">
+                    💰 Minimum deposit: $20 • Larger deposits get bonus credits!
                   </p>
                 </div>
 
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Preferred Area Code (Optional)
-                  </label>
-                  <input
-                    type="text"
-                    value={areaCode}
-                    onChange={(e) => setAreaCode(e.target.value.replace(/\D/g, '').slice(0, 3))}
-                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
-                    placeholder="403, 587, etc. (leave blank for any)"
-                    maxLength={3}
-                  />
-                  <p className="text-sm text-gray-500 mt-1">
-                    We'll try to get you a number with this area code, or assign the next available number.
-                  </p>
-                </div>
+                {!clientSecret && (
+                  <>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-3">
+                        Select Deposit Amount
+                      </label>
+                      <div className="grid grid-cols-2 gap-3">
+                        {[
+                          { amount: 20, bonus: 0, label: '$20' },
+                          { amount: 30, bonus: 4.5, label: '$30', badge: '15% bonus' },
+                          { amount: 50, bonus: 12.5, label: '$50', badge: '25% bonus' },
+                          { amount: 100, bonus: 50, label: '$100', badge: '50% bonus' },
+                        ].map((option) => (
+                          <button
+                            key={option.amount}
+                            type="button"
+                            onClick={() => setDepositAmount(option.amount)}
+                            className={`relative p-4 border-2 rounded-lg text-left transition-all ${
+                              depositAmount === option.amount
+                                ? 'border-cyan-500 bg-cyan-50'
+                                : 'border-gray-200 hover:border-cyan-300'
+                            }`}
+                          >
+                            <div className="font-bold text-lg">{option.label}</div>
+                            <div className="text-sm text-gray-600">
+                              = ${(option.amount + option.bonus).toFixed(2)} credit
+                            </div>
+                            {option.badge && (
+                              <div className="absolute top-2 right-2 bg-green-500 text-white text-xs px-2 py-1 rounded-full font-semibold">
+                                {option.badge}
+                              </div>
+                            )}
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                      <p className="text-sm text-blue-900">
+                        <strong>After payment:</strong> Your wallet will have ${totalCredit.toFixed(2)}, 
+                        then we'll deduct $5 for your number setup. 
+                        Remaining balance: ${(totalCredit - 5).toFixed(2)}
+                      </p>
+                    </div>
+
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-2">
+                        Preferred Area Code (Optional)
+                      </label>
+                      <input
+                        type="text"
+                        value={areaCode}
+                        onChange={(e) => setAreaCode(e.target.value.replace(/\D/g, '').slice(0, 3))}
+                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                        placeholder="403, 587, etc. (leave blank for any)"
+                        maxLength={3}
+                      />
+                      <p className="text-sm text-gray-500 mt-1">
+                        We'll try to get you a number with this area code, or assign the next available number.
+                      </p>
+                    </div>
+                  </>
+                )}
+
+                {purchaseError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <p className="text-sm text-red-900">{purchaseError}</p>
+                  </div>
+                )}
 
                 {!clientSecret ? (
                   <div className="flex space-x-4">
@@ -278,13 +413,21 @@ export default function OnboardingPage() {
                       disabled={loading}
                       className="flex-1 px-6 py-3 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                     >
-                      {loading ? 'Loading...' : 'Continue to Payment'}
+                      {loading ? 'Loading...' : `Deposit $${depositAmount}`}
                     </button>
                   </div>
                 ) : (
-                  <Elements stripe={stripePromise} options={{ clientSecret }}>
-                    <PaymentForm onSuccess={handlePaymentSuccess} />
-                  </Elements>
+                  <>
+                    {stripePromise ? (
+                      <Elements stripe={stripePromise} options={{ clientSecret }}>
+                        <PaymentForm onSuccess={handlePaymentSuccess} amount={depositAmount} totalCredit={totalCredit} />
+                      </Elements>
+                    ) : (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <p className="text-sm text-red-900">Stripe is not configured. Please check your environment variables.</p>
+                      </div>
+                    )}
+                  </>
                 )}
               </div>
             )}
