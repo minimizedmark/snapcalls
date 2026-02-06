@@ -1,0 +1,16 @@
+{
+  "crons": [
+    {
+      "path": "/api/cron/empty-wallet-policy",
+      "schedule": "0 2 * * *"
+    },
+    {
+      "path": "/api/cron/reset-direct-calls",
+      "schedule": "0 0 1 * *"
+    },
+    {
+      "path": "/api/cron/check-alerts",
+      "schedule": "*/30 * * * *"
+    }
+  ]
+}
