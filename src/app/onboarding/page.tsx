@@ -70,7 +70,7 @@ export default function OnboardingPage() {
   const [step, setStep] = useState(1);
   const [loading, setLoading] = useState(false);
   const [clientSecret, setClientSecret] = useState('');
-  const [purchaseError, setPurchaseError] = useState<string | null>(null);
+  const [depositError, setDepositError] = useState<string | null>(null);
   const [businessError, setBusinessError] = useState<string | null>(null);
   const [depositAmount, setDepositAmount] = useState(20);
 
@@ -125,9 +125,9 @@ export default function OnboardingPage() {
     }
   };
 
-  const handleNumberPurchaseStart = async () => {
+  const handleDepositStart = async () => {
     setLoading(true);
-    setPurchaseError(null);
+    setDepositError(null);
 
     // Create payment intent for wallet deposit
     try {
@@ -140,27 +140,34 @@ export default function OnboardingPage() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        setPurchaseError(data?.error || 'Failed to start deposit');
+        setDepositError(data?.error || 'Failed to start deposit');
         return;
       }
 
       if (!data?.clientSecret) {
-        setPurchaseError('Missing payment client secret');
+        setDepositError('Missing payment client secret');
         return;
       }
 
       setClientSecret(data.clientSecret);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Network error';
-      setPurchaseError(message);
+      setDepositError(message);
     } finally {
       setLoading(false);
     }
   };
 
   const handlePaymentSuccess = async () => {
-    // Payment succeeded, now purchase number from wallet
+    // Payment succeeded, move to number setup
+    setStep(3);
+  };
+
+  const handleNumberSetup = async () => {
+    // Setup number by debiting from wallet
     setLoading(true);
+    setDepositError(null);
+    
     try {
       const res = await fetch('/api/number/purchase', {
         method: 'POST',
@@ -171,16 +178,16 @@ export default function OnboardingPage() {
       const data = await res.json().catch(() => ({}));
 
       if (!res.ok) {
-        setPurchaseError(data?.error || 'Failed to purchase number');
+        setDepositError(data?.error || 'Failed to setup number');
         setLoading(false);
         return;
       }
 
       // Success! Move to completion step
-      setStep(3);
+      setStep(4);
     } catch (error) {
       const message = error instanceof Error ? error.message : 'Network error';
-      setPurchaseError(message);
+      setDepositError(message);
     } finally {
       setLoading(false);
     }
@@ -206,17 +213,10 @@ export default function OnboardingPage() {
           </div>
         </div>
       </header>
-
-      {/* Content */}
-      <div className="flex-1 py-12">
-        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
-          {/* Progress */}
-          <div className="mb-8">
-            <div className="flex items-center justify-between">
-              {[1, 2, 3].map((i) => (
+, 4].map((i) => (
                 <div
                   key={i}
-                  className={`flex items-center ${i < 3 ? 'flex-1' : ''}`}
+                  className={`flex items-center ${i < 4 ? 'flex-1' : ''}`}
                 >
                   <div
                     className={`w-10 h-10 rounded-full flex items-center justify-center font-semibold ${
@@ -227,7 +227,7 @@ export default function OnboardingPage() {
                   >
                     {i}
                   </div>
-                  {i < 3 && (
+                  {i < 4 && (
                     <div
                       className={`h-1 flex-1 mx-4 ${
                         step > i ? 'bg-cyan-500' : 'bg-gray-200'
@@ -238,6 +238,16 @@ export default function OnboardingPage() {
               ))}
             </div>
             <div className="flex justify-between mt-2 text-sm">
+              <span className={step >= 1 ? 'text-cyan-600 font-medium' : 'text-gray-600'}>
+                Business Info
+              </span>
+              <span className={step >= 2 ? 'text-cyan-600 font-medium' : 'text-gray-600'}>
+                Load Wallet
+              </span>
+              <span className={step >= 3 ? 'text-cyan-600 font-medium' : 'text-gray-600'}>
+                Get Number
+              </span>
+              <span className={step >= 4-between mt-2 text-sm">
               <span className={step >= 1 ? 'text-cyan-600 font-medium' : 'text-gray-600'}>
                 Business Info
               </span>
@@ -311,19 +321,9 @@ export default function OnboardingPage() {
                   </div>
                 )}
               </div>
-            )}
-
-            {step === 2 && (
-              <div className="space-y-6">
-                <div className="flex items-center space-x-3 mb-6">
-                  <DollarSign className="w-6 h-6 text-cyan-500" />
-                  <h2 className="text-2xl font-bold">Load Your Wallet</h2>
-                </div>
-
-                <div className="bg-cyan-50 border border-cyan-200 rounded-lg p-6 mb-6">
-                  <h3 className="font-bold text-cyan-900 mb-2">First, add funds to your wallet</h3>
-                  <p className="text-sm text-cyan-800 mb-3">
-                    Your phone number costs $5 (one-time). We'll deduct it from your wallet after you deposit.
+            )}p className="text-sm text-cyan-800 mb-3">
+                    There is a <strong>$5 setup fee</strong> for your Snap Calls forwarding number. 
+                    It will be deducted from your wallet.
                   </p>
                   <p className="text-sm text-cyan-700">
                     💰 Minimum deposit: $20 • Larger deposits get bonus credits!
@@ -367,36 +367,19 @@ export default function OnboardingPage() {
                       </div>
                     </div>
 
-                    <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                      <p className="text-sm text-blue-900">
-                        <strong>After payment:</strong> Your wallet will have ${totalCredit.toFixed(2)}, 
-                        then we'll deduct $5 for your number setup. 
-                        Remaining balance: ${(totalCredit - 5).toFixed(2)}
-                      </p>
-                    </div>
-
-                    <div>
-                      <label className="block text-sm font-medium text-gray-700 mb-2">
-                        Preferred Area Code (Optional)
-                      </label>
-                      <input
-                        type="text"
-                        value={areaCode}
-                        onChange={(e) => setAreaCode(e.target.value.replace(/\D/g, '').slice(0, 3))}
-                        className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
-                        placeholder="403, 587, etc. (leave blank for any)"
-                        maxLength={3}
-                      />
-                      <p className="text-sm text-gray-500 mt-1">
-                        We'll try to get you a number with this area code, or assign the next available number.
-                      </p>
+                    <div className="bg-gray-50 border border-gray-200 rounded-lg p-4 text-sm text-gray-700">
+                      By continuing, you agree to our{' '}
+                      <a href="/terms" target="_blank" className="text-cyan-600 hover:text-cyan-700 underline">
+                        Terms of Service
+                      </a>
+                      . Phone numbers remain property of Snap Calls and may be reassigned if your account is closed.
                     </div>
                   </>
                 )}
 
-                {purchaseError && (
+                {depositError && (
                   <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                    <p className="text-sm text-red-900">{purchaseError}</p>
+                    <p className="text-sm text-red-900">{depositError}</p>
                   </div>
                 )}
 
@@ -409,11 +392,11 @@ export default function OnboardingPage() {
                       Back
                     </button>
                     <button
-                      onClick={handleNumberPurchaseStart}
+                      onClick={handleDepositStart}
                       disabled={loading}
                       className="flex-1 px-6 py-3 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
                     >
-                      {loading ? 'Loading...' : `Deposit $${depositAmount}`}
+                      {loading ? 'Loading...' : `Continue with $${depositAmount}`}
                     </button>
                   </div>
                 ) : (
@@ -423,6 +406,65 @@ export default function OnboardingPage() {
                         <PaymentForm onSuccess={handlePaymentSuccess} amount={depositAmount} totalCredit={totalCredit} />
                       </Elements>
                     ) : (
+                      <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                        <p className="text-sm text-red-900">Stripe is not configured. Please check your environment variables.</p>
+                      </div>
+                    )}
+                  </>
+                )}
+              </div>
+            )}
+
+            {step === 3 && (
+              <div className="space-y-6">
+                <div className="flex items-center space-x-3 mb-6">
+                  <Phone className="w-6 h-6 text-cyan-500" />
+                  <h2 className="text-2xl font-bold">Get Your Forwarding Number</h2>
+                </div>
+
+                <div className="bg-green-50 border border-green-200 rounded-lg p-6 mb-6">
+                  <p className="text-sm text-green-800 mb-2">
+                    ✓ Wallet loaded successfully!
+                  </p>
+                  <p className="text-sm text-green-700">
+                    Now we'll assign you a dedicated forwarding number. The $5 setup fee will be deducted from your wallet.
+                  </p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Preferred Area Code (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    value={areaCode}
+                    onChange={(e) => setAreaCode(e.target.value.replace(/\D/g, '').slice(0, 3))}
+                    className="w-full px-4 py-3 border border-gray-300 rounded-lg focus:ring-2 focus:ring-cyan-500 focus:border-transparent"
+                    placeholder="403, 587, etc. (leave blank for any)"
+                    maxLength={3}
+                  />
+                  <p className="text-sm text-gray-500 mt-1">
+                    We'll try to assign a number with this area code, or the next available number.
+                  </p>
+                </div>
+
+                {depositError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
+                    <p className="text-sm text-red-900">{depositError}</p>
+                  </div>
+                )}
+
+                <button
+                  onClick={handleNumberSetup}
+                  disabled={loading}
+                  className="w-full px-6 py-3 bg-cyan-500 text-white rounded-lg hover:bg-cyan-600 disabled:opacity-50 disabled:cursor-not-allowed font-medium"
+                >
+                  {loading ? 'Setting up your number...' : 'Get My Number'}
+                </button>
+              </div>
+            )}
+
+            {step === 4 (
                       <div className="bg-red-50 border border-red-200 rounded-lg p-4">
                         <p className="text-sm text-red-900">Stripe is not configured. Please check your environment variables.</p>
                       </div>
