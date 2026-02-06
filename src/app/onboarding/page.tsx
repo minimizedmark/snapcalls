@@ -213,7 +213,14 @@ export default function OnboardingPage() {
           </div>
         </div>
       </header>
-, 4].map((i) => (
+
+      {/* Content */}
+      <div className="flex-1 py-12">
+        <div className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8">
+          {/* Progress */}
+          <div className="mb-8">
+            <div className="flex items-center justify-between">
+              {[1, 2, 3, 4].map((i) => (
                 <div
                   key={i}
                   className={`flex items-center ${i < 4 ? 'flex-1' : ''}`}
@@ -247,10 +254,14 @@ export default function OnboardingPage() {
               <span className={step >= 3 ? 'text-cyan-600 font-medium' : 'text-gray-600'}>
                 Get Number
               </span>
-              <span className={step >= 4-between mt-2 text-sm">
-              <span className={step >= 1 ? 'text-cyan-600 font-medium' : 'text-gray-600'}>
-                Business Info
+              <span className={step >= 4 ? 'text-cyan-600 font-medium' : 'text-gray-600'}>
+                Complete
               </span>
+            </div>
+          </div>
+
+          {/* Step Content */}
+          <div className="bg-white rounded-lg border border-gray-200 p-8">
               <span className={step >= 2 ? 'text-cyan-600 font-medium' : 'text-gray-600'}>
                 Get Your Number
               </span>
