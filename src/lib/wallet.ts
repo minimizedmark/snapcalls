@@ -1,6 +1,16 @@
 import { prisma } from './prisma';
 import { toDecimal, fromDecimal, PRICING } from './pricing';
 
+/**
+ * Custom error for insufficient wallet balance
+ */
+export class InsufficientBalanceError extends Error {
+  constructor(message: string = 'Insufficient wallet balance') {
+    super(message);
+    this.name = 'InsufficientBalanceError';
+  }
+}
+
 export interface DebitWalletParams {
   userId: string;
   amount: number;
@@ -17,13 +27,31 @@ export interface CreditWalletParams {
 
 /**
  * Atomically debits (subtracts) amount from wallet with balance check
- * Returns new balance or throws error if insufficient funds
+ * Uses atomic decrement operation to prevent race conditions
+ * Returns new balance or throws InsufficientBalanceError if insufficient funds
  */
 export async function debitWallet(params: DebitWalletParams): Promise<number> {
   const { userId, amount, description, referenceId } = params;
 
   return await prisma.$transaction(async (tx) => {
-    // Get current wallet with lock
+    // Atomic update with balance check in WHERE clause
+    // This prevents race conditions - only updates if balance >= amount
+    const result = await tx.wallet.updateMany({
+      where: {
+        userId,
+        balance: { gte: toDecimal(amount) },
+      },
+      data: {
+        balance: { decrement: toDecimal(amount) },
+      },
+    });
+
+    // If no rows were updated, balance was insufficient
+    if (result.count === 0) {
+      throw new InsufficientBalanceError();
+    }
+
+    // Read the new balance
     const wallet = await tx.wallet.findUnique({
       where: { userId },
     });
@@ -32,18 +60,7 @@ export async function debitWallet(params: DebitWalletParams): Promise<number> {
       throw new Error('Wallet not found');
     }
 
-    const currentBalance = fromDecimal(wallet.balance);
-    const newBalance = currentBalance - amount;
-
-    if (newBalance < 0) {
-      throw new Error('Insufficient wallet balance');
-    }
-
-    // Update wallet
-    await tx.wallet.update({
-      where: { userId },
-      data: { balance: toDecimal(newBalance) },
-    });
+    const newBalance = fromDecimal(wallet.balance);
 
     // Create transaction record
     await tx.walletTransaction.create({
@@ -53,7 +70,7 @@ export async function debitWallet(params: DebitWalletParams): Promise<number> {
         type: 'DEBIT',
         description,
         referenceId,
-        balanceAfter: toDecimal(newBalance),
+        balanceAfter: wallet.balance,
       },
     });
 
@@ -63,13 +80,27 @@ export async function debitWallet(params: DebitWalletParams): Promise<number> {
 
 /**
  * Atomically credits (adds) amount to wallet
+ * Uses atomic increment operation to prevent race conditions
  * Returns new balance
  */
 export async function creditWallet(params: CreditWalletParams): Promise<number> {
   const { userId, amount, description, referenceId } = params;
 
   return await prisma.$transaction(async (tx) => {
-    // Get current wallet
+    // Atomic increment operation
+    const result = await tx.wallet.updateMany({
+      where: { userId },
+      data: {
+        balance: { increment: toDecimal(amount) },
+      },
+    });
+
+    // Verify wallet exists
+    if (result.count === 0) {
+      throw new Error('Wallet not found');
+    }
+
+    // Read the new balance
     const wallet = await tx.wallet.findUnique({
       where: { userId },
     });
@@ -78,14 +109,7 @@ export async function creditWallet(params: CreditWalletParams): Promise<number> 
       throw new Error('Wallet not found');
     }
 
-    const currentBalance = fromDecimal(wallet.balance);
-    const newBalance = currentBalance + amount;
-
-    // Update wallet
-    await tx.wallet.update({
-      where: { userId },
-      data: { balance: toDecimal(newBalance) },
-    });
+    const newBalance = fromDecimal(wallet.balance);
 
     // Create transaction record
     await tx.walletTransaction.create({
@@ -95,7 +119,7 @@ export async function creditWallet(params: CreditWalletParams): Promise<number> 
         type: 'CREDIT',
         description,
         referenceId,
-        balanceAfter: toDecimal(newBalance),
+        balanceAfter: wallet.balance,
       },
     });
 
