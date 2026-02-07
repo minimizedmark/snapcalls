@@ -41,6 +41,7 @@ model User {
   stripeCustomer          StripeCustomer?
   callLogs                CallLog[]
   assignedPhoneNumbers    PhoneNumberInventory[]
+  pendingNumberRequests   PendingNumberRequest[]
 
   @@map("users")
   @@schema("public")
@@ -74,12 +75,14 @@ model MagicLink {
 }
 
 model TwilioConfig {
-  id           String  @id @default(cuid())
-  userId       String  @unique @map("user_id")
-  accountSid   String  @map("account_sid") // ENCRYPTED
-  authToken    String  @map("auth_token") // ENCRYPTED
-  phoneNumber  String  @map("phone_number")
-  verified     Boolean @default(false)
+  id                 String  @id @default(cuid())
+  userId             String  @unique @map("user_id")
+  accountSid         String  @map("account_sid") // ENCRYPTED
+  authToken          String  @map("auth_token") // ENCRYPTED
+  phoneNumber        String  @map("phone_number")
+  verified           Boolean @default(false)
+  tempNumber         Boolean @default(false) @map("temp_number") // SnapLine subscriber got non-regional fallback
+  requestedAreaCode  String? @map("requested_area_code") // For temp number swap later
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -102,6 +105,26 @@ model PhoneNumberInventory {
 
   @@index([status])
   @@map("phone_number_inventory")
+  @@schema("public")
+}
+
+model PendingNumberRequest {
+  id                String   @id @default(cuid())
+  userId            String   @map("user_id")
+  requestedAreaCode String?  @map("requested_area_code")
+  country           String   @default("US")
+  isSnapLine        Boolean  @default(false) @map("is_snap_line")
+  paidAmount        Decimal  @db.Decimal(10, 2) @map("paid_amount")
+  status            String   @default("PENDING") // PENDING, FULFILLED, FAILED
+  fulfilledNumber   String?  @map("fulfilled_number")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@index([userId])
+  @@map("pending_number_requests")
   @@schema("public")
 }
 

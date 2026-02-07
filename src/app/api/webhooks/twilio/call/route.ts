@@ -202,9 +202,25 @@ async function processCallAsync(req: NextRequest) {
       return;
     }
 
-    // Send SMS to caller using admin Twilio account
+    /**
+     * BILLING PHILOSOPHY: Charge on attempt, not on success
+     * 
+     * We always charge for the call even if SMS delivery fails because:
+     * 1. We incurred Twilio costs attempting the service
+     * 2. The user configured the service and requested the response
+     * 3. Transient failures shouldn't let users game the system
+     * 
+     * The flow is:
+     * 1. Attempt SMS (may fail due to Twilio errors, invalid number, etc.)
+     * 2. Always debit wallet regardless of SMS outcome
+     * 3. Record both statuses in call log for transparency
+     * 4. If wallet debit fails, log for manual review (rare race condition)
+     */
+
+    // Attempt to send SMS - capture status but never return early
     let smsStatus = 'pending';
     let smsMessageSid: string | null = null;
+    let smsError: Error | null = null;
 
     try {
       const smsResult = await sendSmsFromNumber(
@@ -215,26 +231,38 @@ async function processCallAsync(req: NextRequest) {
 
       smsStatus = smsResult.status;
       smsMessageSid = smsResult.sid;
-    } catch (smsError) {
-      console.error('❌ Failed to send SMS:', smsError);
+      console.log(`✅ SMS sent: ${smsMessageSid} (${smsStatus})`);
+    } catch (error) {
+      smsError = error as Error;
+      console.error('❌ SMS send failed:', smsError.message);
       smsStatus = 'failed';
-
-      // Don't charge wallet if SMS failed
-      return;
+      // Continue to billing - we attempted the service
     }
 
-    // Deduct from wallet (atomic transaction)
-    let balanceAfter: number;
+    // Deduct from wallet (atomic transaction) - ALWAYS attempt regardless of SMS status
+    let balanceAfter: number = 0;
+    let walletDebitStatus = 'pending';
+    
     try {
       balanceAfter = await debitWallet({
         userId: user.id,
         amount: pricing.totalCost,
-        description: `Call from ${callerName || callerNumber}`,
+        description: smsStatus === 'failed' 
+          ? `Call from ${callerName || callerNumber} (SMS failed)`
+          : `Call from ${callerName || callerNumber}`,
         referenceId: twilioCallSid,
       });
+      walletDebitStatus = 'success';
+      console.log(`💰 Wallet debited: $${pricing.totalCost} (balance: $${balanceAfter})`);
     } catch (walletError) {
-      console.error('❌ Failed to debit wallet:', walletError);
-      return;
+      walletDebitStatus = 'failed';
+      console.error('❌ CRITICAL: Wallet debit failed after SMS attempt:', walletError);
+      console.error(`   - User: ${user.id} (${user.email})`);
+      console.error(`   - Amount: $${pricing.totalCost}`);
+      console.error(`   - Call: ${twilioCallSid}`);
+      console.error(`   - SMS Status: ${smsStatus}`);
+      // TODO: Alert finance team for manual review
+      // Continue to create call log for audit trail
     }
 
     // Create call log entry
